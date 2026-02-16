@@ -3,10 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+
+  <!-- iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Aufgaben">
+
+  <!-- Theme -->
   <meta name="theme-color" content="#0b0f14" />
   <link rel="manifest" href="./manifest.json" />
-  <title>Aufgaben & Fahrten</title>
   <link rel="stylesheet" href="./styles.css" />
+
+  <!-- Icons -->
+  <link rel="icon" href="./icon-192.png">
+  <link rel="apple-touch-icon" href="./icon-192.png">
+
+  <title>Aufgaben & Fahrten</title>
 </head>
 <body>
   <header class="topbar">
@@ -19,6 +31,7 @@
   </header>
 
   <main class="container">
+
     <!-- LOGIN -->
     <section id="loginView" class="card">
       <h2>Anmeldung</h2>
@@ -35,11 +48,7 @@
       </div>
 
       <details class="cardlite">
-        <summary>Admin Bootstrap (Zero Setup)</summary>
-        <p class="muted small">
-          Beim allerersten Start wird automatisch ein Super-Admin gesetzt.
-          Danach kann nur ein Admin weitere Admins in der App hinzufügen.
-        </p>
+        <summary>UID (für Admin/Super-Admin Freigabe)</summary>
         <div class="row">
           <button id="showUidBtn" class="btn ghost">Meine UID anzeigen</button>
           <button id="copyUidBtn" class="btn ghost" disabled>UID kopieren</button>
@@ -48,14 +57,15 @@
       </details>
 
       <div id="loginErr" class="error"></div>
+
       <p class="muted small">
-        Push: Android/Chrome geht direkt. iPad/iPhone nur als installierte PWA („Zum Home-Bildschirm“).
+        iPhone/iPad: erst <b>Teilen → Zum Home-Bildschirm</b> hinzufügen, dann als App starten.
       </p>
     </section>
 
     <!-- APP -->
     <section id="appView" class="hidden">
-      <!-- TAGS -->
+
       <section class="card">
         <div class="row between">
           <h2>Tags (alle sichtbar)</h2>
@@ -64,7 +74,6 @@
         <div id="tagList" class="list"></div>
       </section>
 
-      <!-- TAG DETAIL -->
       <section class="card">
         <div class="row between">
           <h2 id="openTagTitle">Kein Tag geöffnet</h2>
@@ -74,18 +83,18 @@
 
         <div class="row between">
           <button id="newTaskBtn" class="btn ghost">+ Aufgabe</button>
-          <span class="muted small">Tippe ✅ um abzuhaken</span>
+          <span class="muted small">✅ tippen = erledigt</span>
         </div>
 
         <div id="taskList" class="list"></div>
       </section>
 
-      <!-- FAHRTEN -->
       <section class="card">
         <div class="row between">
           <h2>Fahrten (heute)</h2>
           <span id="dayKeyBadge" class="pill"></span>
         </div>
+
         <div class="grid2">
           <label>Name
             <select id="rideNameSel" class="select"></select>
@@ -94,13 +103,13 @@
             <input id="rideEinsatz" class="input" placeholder="z.B. 12345" />
           </label>
         </div>
+
         <div class="row">
           <button id="addRideBtn" class="btn">Add Fahrt</button>
           <span id="rideInfo" class="muted small"></span>
         </div>
       </section>
 
-      <!-- ADMIN -->
       <section class="card">
         <div class="row between">
           <h2>Admin</h2>
@@ -130,29 +139,38 @@
 
           <div class="divider"></div>
 
-          <h3>Ultra Dashboard</h3>
-          <div class="row between">
-            <input id="godSearch" class="search" placeholder="Suche (Tag oder Aufgabe)" />
-            <div class="row">
-              <button id="toggleOnlyOpenBtn" class="btn ghost">Nur offene</button>
-              <button id="collapseAllBtn" class="btn ghost">Alle zuklappen</button>
-              <button id="dayChangeBtn" class="btn danger">Tageswechsel</button>
-            </div>
-          </div>
-          <div id="godSummary" class="muted small"></div>
-          <div id="godList" class="list"></div>
-
-          <div class="divider"></div>
-
           <h3>Admins verwalten</h3>
-          <p class="muted small">UID eines Geräts eintragen → wird Admin.</p>
+          <p class="muted small">Super-Admin kann bis zu 3 Super-Admins und 8 Admins verwalten.</p>
+
           <div class="row">
-            <input id="adminUidAdd" class="input" placeholder="UID einfügen" />
+            <input id="adminUidAdd" class="input" placeholder="UID für ADMIN (max 8)" />
             <button id="adminUidAddBtn" class="btn ghost">Admin hinzufügen</button>
           </div>
           <div id="adminUidList" class="list"></div>
+
+          <div class="row">
+            <input id="superUidAdd" class="input" placeholder="UID für SUPERADMIN (max 3)" />
+            <button id="superUidAddBtn" class="btn ghost">Super-Admin hinzufügen</button>
+          </div>
+          <div id="superUidList" class="list"></div>
+
+          <div class="divider"></div>
+
+          <h3>Ultra Dashboard</h3>
+          <div class="row between">
+            <input id="godSearch" class="search" placeholder="Suche Tag oder Aufgabe" />
+            <div class="row">
+              <button id="toggleOnlyOpenBtn" class="btn ghost">Nur offen</button>
+              <button id="collapseAllBtn" class="btn ghost">Zuklappen</button>
+              <button id="dayChangeBtn" class="btn danger">Tageswechsel</button>
+            </div>
+          </div>
+
+          <div id="godSummary" class="muted small"></div>
+          <div id="godList" class="list"></div>
         </div>
       </section>
+
     </section>
   </main>
 
