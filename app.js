@@ -5,36 +5,45 @@ import {
   signOut,
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
-
 import {
   getFirestore,
   collection,
   doc,
-  setDoc,
   getDoc,
-  getDocs,
+  setDoc,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  onSnapshot,
   query,
   where,
   orderBy,
-  onSnapshot,
-  updateDoc,
-  deleteDoc,
+  serverTimestamp,
   arrayUnion,
-  arrayRemove,
-  serverTimestamp
+  getDocs
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
-
-import {
-  getMessaging,
-  getToken,
-  isSupported as messagingIsSupported
-} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging.js";
-
-/**
- * TODO: Firebase Web Config hier eintragen (Firebase Console -> Project settings -> Web app)
- */
-const firebaseConfig = loadFirebaseConfig_();
+// ---------- Helpers ----------
+const $ = (id)=>document.getElementById(id);
+function n(v){ return String(v ?? "").replace(/\s+/g," ").trim(); }
+function escapeHtml(s){
+  s = String(s ?? "");
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
+}
+function show(el, on){
+  if(!el) return;
+  el.classList.toggle("hidden", !on);
+}
+function todayKey(){
+  const d = new Date();
+  const pad = (x)=>String(x).padStart(2,"0");
+  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+}
+function stamp(){
+  const d = new Date();
+  const pad = (x)=>String(x).padStart(2,"0");
+  return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
 
 function loadFirebaseConfig_(){
   try{
@@ -56,6 +65,9 @@ function parseFirebaseConfigInput_(text){
   if(!obj.projectId || !obj.apiKey) throw new Error("projectId/apiKey fehlen.");
   return obj;
 }
+
+// ---------- Firebase init (Config comes from localStorage) ----------
+const firebaseConfig = loadFirebaseConfig_();
 
 if(!firebaseConfig){
   // Setup required (iPad no-edit mode)
@@ -93,49 +105,53 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const $ = (id) => document.getElementById(id);
-
+// ---------- DOM ----------
+const setupView = $("setupView");
 const loginView = $("loginView");
 const appView = $("appView");
-const logoutBtn = $("logoutBtn");
-const who = $("who");
-const loginErr = $("loginErr");
 
-const userSelect = $("userSelect");
-const userLoginBtn = $("userLoginBtn");
-const enablePushBtn = $("enablePushBtn");
+const firebaseConfigInput = $("firebaseConfigInput");
+const saveFirebaseConfigBtn = $("saveFirebaseConfigBtn");
+const resetFirebaseConfigBtn = $("resetFirebaseConfigBtn");
+const setupErr = $("setupErr");
+
+// Login
+const usernameSel = $("usernameSel");
+const loginBtn = $("loginBtn");
+const logoutBtn = $("logoutBtn");
+
+// Admin setup (UID)
 const showUidBtn = $("showUidBtn");
 const uidBox = $("uidBox");
 
-
-const tagsList = $("tagsList");
+// App – Tag list
 const tagSearch = $("tagSearch");
-const tagDetail = $("tagDetail");
-const tagTitle = $("tagTitle");
+const tagList = $("tagList");
+const openTagTitle = $("openTagTitle");
 const closeTagBtn = $("closeTagBtn");
 
-const employeeName = $("employeeName");
-const addEmployeeBtn = $("addEmployeeBtn");
-const employeeChips = $("employeeChips");
+// Tasks
+const taskList = $("taskList");
 const markDoneBtn = $("markDoneBtn");
-const selectedCount = $("selectedCount");
-const tasksList = $("tasksList");
+const doneAsName = $("doneAsName");
 
 // Fahrten
-const rideName = $("rideName");
+const rideNameSel = $("rideNameSel");
 const rideEinsatz = $("rideEinsatz");
 const addRideBtn = $("addRideBtn");
-const ridesList = $("ridesList");
-const dayKeyEl = $("dayKey");
 
 // Admin Panel
 const adminCard = $("adminCard");
-const newEmployeeName = $("newEmployeeName");
-const addEmployeePublicBtn = $("addEmployeePublicBtn");
-const employeesPublicList = $("employeesPublicList");
-const newTagId = $("newTagId");
-const addTagBtn = $("addTagBtn");
 const adminTagsList = $("adminTagsList");
+const addTagInput = $("addTagInput");
+const addTagBtn = $("addTagBtn");
+
+const adminEmployeesList = $("adminEmployeesList");
+const addEmployeeInput = $("addEmployeeInput");
+const addEmployeeBtn = $("addEmployeeBtn");
+
+const pointsCard = $("pointsCard");
+const pointsList = $("pointsList");
 
 // Ultra Admin Mode
 const toggleOnlyOpenTagsBtn = $("toggleOnlyOpenTagsBtn");
@@ -146,47 +162,36 @@ const collapseAllBtn = $("collapseAllBtn");
 const ultraSummary = $("ultraSummary");
 const ultraTags = $("ultraTags");
 
-// Punkte
-const pointsCard = $("pointsCard");
-const pointsList = $("pointsList");
-const refreshPointsBtn = $("refreshPointsBtn");
-
-let isAdmin = false;
+// ---------- State ----------
 let myDisplayName = "";
-let selectedEmployees = []; // optional extra names
-let selectedTaskIds = new Set();
-let currentTagId = null;
+let isAdmin = false;
 
-let unsubTasks = null;
+let currentTagId = "";
+let currentTagKey = "";
+
 let unsubTags = null;
-let unsubRides = null;
-let unsubEmployeesPublic = null;
+let unsubTasks = null;
+let unsubEmployees = null;
 let unsubAdminTags = null;
+let unsubPoints = null;
 let unsubUltraTasks = null;
+
 let ultraOnlyOpen = false;
 let ultraData = { tags: [], tasks: [] };
 
-function n(s){ return String(s ?? "").trim().replace(/\s+/g," "); }
-function tagKey(s){
-  let x = n(s).toLowerCase();
-  x = x.replace(/["'„“”]/g,"");
-  x = x.replace(/[^a-z0-9äöüß]/g,"");
-  return x;
-}
-function escapeHtml(s){
-  return String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");
-}
-function show(el, yes){ el.classList.toggle("hidden", !yes); }
-
-function todayKey(){
-  const d = new Date();
-  const pad = (x)=>String(x).padStart(2,"0");
-  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
-}
-
+// ---------- Auth helpers ----------
 async function ensureAnonAuth(){
-  if(!auth.currentUser){
-    await signInAnonymously(auth);
+  if(auth.currentUser) return;
+  await signInAnonymously(auth);
+}
+
+async function ensureUserProfile_(name){
+  if(!auth.currentUser) return;
+  const uid = auth.currentUser.uid;
+  const ref = doc(db, "users", uid);
+  const snap = await getDoc(ref);
+  if(!snap.exists()){
+    await setDoc(ref, { name, createdAt: serverTimestamp() }, { merge:true });
   }
 }
 
@@ -207,487 +212,328 @@ async function refreshClaimsAndProfile(){
   show(adminCard, isAdmin);
 }
 
-function renderChips(){
-  employeeChips.innerHTML = "";
-  selectedEmployees.forEach((name)=>{
-    const chip = document.createElement("div");
-    chip.className = "chip";
-    chip.innerHTML = `<span>${escapeHtml(name)}</span><button title="Entfernen">×</button>`;
-    chip.querySelector("button").onclick = () => {
-      selectedEmployees = selectedEmployees.filter(x => x.toLowerCase() !== name.toLowerCase());
-      renderChips();
-    };
-    employeeChips.appendChild(chip);
+// ---------- Data loading ----------
+function loadEmployees(){
+  if(unsubEmployees) unsubEmployees();
+  unsubEmployees = onSnapshot(query(collection(db,"employees_public"), orderBy("name")), (snap)=>{
+    const list = snap.docs.map(d=>d.data().name).filter(Boolean);
+    renderEmployeeSelectors(list);
+    if(isAdmin) renderAdminEmployees(list);
   });
 }
 
-function updateSelectedCount(){
-  selectedCount.textContent = String(selectedTaskIds.size);
+function renderEmployeeSelectors(list){
+  // Login selector
+  usernameSel.innerHTML = `<option value="">Name wählen…</option>` + list.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
+  // Ride name selector
+  rideNameSel.innerHTML = `<option value="">Name wählen…</option>` + list.map(x=>`<option value="${escapeHtml(x)}">${escapeHtml(x)}</option>`).join("");
+  // Done-as info
+  doneAsName.textContent = myDisplayName ? `Angemeldet als: ${myDisplayName}` : "";
 }
 
-async function upsertTag(tagId){
-  const key = tagKey(tagId);
-  if(!key) return;
-  // tags write is admin-only; non-admin can still open existing tags
-  if(isAdmin){
-    await setDoc(doc(db, "tags", key), { tagId: n(tagId), tagKey: key, updatedAt: serverTimestamp() }, { merge: true });
-  }
+async function loadTags(){
+  if(unsubTags) unsubTags();
+  unsubTags = onSnapshot(query(collection(db,"tags"), orderBy("tagId")), (snap)=>{
+    const tags = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    renderTags(tags);
+  });
 }
 
-function renderTags(docs){
+function renderTags(tags){
   const q = n(tagSearch.value).toLowerCase();
-  tagsList.innerHTML = "";
-  const filtered = docs.filter(d=>{
-    const tid = (d.tagId||"").toLowerCase();
-    return !q || tid.includes(q);
+  const filtered = tags.filter(t=>{
+    const id = (t.tagId||t.id||"").toLowerCase();
+    return !q || id.includes(q);
   });
+
+  tagList.innerHTML = "";
   if(!filtered.length){
-    tagsList.innerHTML = `<div class="muted">Keine Tags gefunden.</div>`;
+    tagList.innerHTML = `<div class="muted">Keine Tags.</div>`;
     return;
   }
-  filtered.forEach((d)=>{
-    const item = document.createElement("div");
-    item.className = "item";
-    item.innerHTML = `<div class="main">
-      <div class="title">🏷️ ${escapeHtml(d.tagId || "")}</div>
-      <div class="sub">Öffnen</div>
-    </div>
-    <div class="actions">
-      <button class="btn ghost">Öffnen</button>
-    </div>`;
-    item.querySelector("button").onclick = ()=> openTag(d.tagId);
-    item.onclick = ()=> openTag(d.tagId);
-    tagsList.appendChild(item);
-  });
-}
 
-function renderTasks(taskDocs){
-  tasksList.innerHTML = "";
-  if(!taskDocs.length){
-    tasksList.innerHTML = `<div class="muted">Keine Aufgaben für diesen Tag.</div>`;
-    return;
-  }
-  taskDocs.forEach((t)=>{
-    const id = t.id;
-    const selected = selectedTaskIds.has(id);
-    const doneBy = Array.isArray(t.doneBy) ? t.doneBy.join(", ") : "";
-    const finalInfo = t.finalOk ? `🧾 ✅ ${escapeHtml(t.finalBy||"")}` : "🧾 —";
-    const sub = [
-      doneBy ? `Erledigt von: ${escapeHtml(doneBy)}` : "",
-      finalInfo
-    ].filter(Boolean).join(" • ");
-
-    const item = document.createElement("div");
-    item.className = "item";
-    item.innerHTML = `<div class="main">
-      <div class="title">${escapeHtml(t.status||"❌")} ${escapeHtml(t.task||"")}</div>
-      <div class="sub">${sub}</div>
-    </div>
-    <div class="actions">
-      <input class="checkbox" type="checkbox" ${selected ? "checked":""} />
-      <button class="btn ghost">⋯</button>
-    </div>`;
-
-    item.querySelector("input").onchange = (e)=>{
-      if(e.target.checked) selectedTaskIds.add(id); else selectedTaskIds.delete(id);
-      updateSelectedCount();
-    };
-
-    item.querySelector(".main").onclick = ()=>{
-      if(selectedTaskIds.has(id)) selectedTaskIds.delete(id); else selectedTaskIds.add(id);
-      updateSelectedCount();
-      item.querySelector("input").checked = selectedTaskIds.has(id);
-    };
-
-    item.querySelector("button").onclick = async (e)=>{
-      e.stopPropagation();
-      if(!isAdmin){
-        alert("Nur Admins können Aufgaben bearbeiten.");
-        return;
-      }
-      const choice = prompt(
-`Aktion:
-final = Endkontrolle togglen
-reset = Task reset
-edit = Task Text ändern
-delete = Task löschen`
-      );
-      if(!choice) return;
-      const c = choice.trim().toLowerCase();
-      if(c === "final"){
-        await updateDoc(doc(db,"daily_tasks",id), { finalOk: !t.finalOk, finalBy: (!t.finalOk) ? myDisplayName : "", updatedAt: serverTimestamp() });
-      } else if(c === "reset"){
-        await updateDoc(doc(db,"daily_tasks",id), {
-          status:"❌", doneBy:[], doneAtLast:"", finalOk:false, finalBy:"",
-          pointsBooked:false, bookedFor:[], updatedAt: serverTimestamp()
-        });
-      } else if(c === "edit"){
-        const nt = prompt("Neuer Task Text:", t.task||"");
-        if(nt != null){
-          await updateDoc(doc(db,"daily_tasks",id), { task: n(nt), updatedAt: serverTimestamp() });
-        }
-      } else if(c === "delete"){
-        if(confirm("Task wirklich löschen?")){
-          await deleteDoc(doc(db,"daily_tasks",id));
-        }
-      }
-    };
-
-    tasksList.appendChild(item);
+  filtered.forEach(t=>{
+    const div = document.createElement("div");
+    div.className="item";
+    div.innerHTML = `
+      <div class="main">
+        <div class="title">🏷️ ${escapeHtml(t.tagId||t.id)}</div>
+        <div class="sub muted small">${escapeHtml(t.tagKey||t.id)}</div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" data-open="1">Öffnen</button>
+      </div>
+    `;
+    div.querySelector('[data-open="1"]').onclick = ()=> openTag(t.tagId||t.id);
+    tagList.appendChild(div);
   });
 }
 
 async function openTag(tagId){
-  currentTagId = n(tagId);
-  await upsertTag(currentTagId);
-  tagTitle.textContent = `Tag: ${currentTagId}`;
-  show(tagDetail, true);
+  const tid = n(tagId);
+  if(!tid) return;
+  currentTagId = tid;
+  currentTagKey = canonKey_(tid);
 
-  selectedTaskIds = new Set();
-  updateSelectedCount();
+  openTagTitle.textContent = `Tag: ${tid}`;
+  show(loginView, false);
+  show(appView, true);
 
+  await startTasksStream();
+}
+
+function canonKey_(s){
+  return n(s).toLowerCase().replace(/["'„“”]/g,"").replace(/[^a-z0-9äöüß]/g,"");
+}
+
+async function startTasksStream(){
   if(unsubTasks) unsubTasks();
-  const key = tagKey(currentTagId);
-  const qy = query(collection(db,"daily_tasks"), where("tagKey","==", key), orderBy("task"));
+  // Tasks by tagKey
+  const qy = query(
+    collection(db,"daily_tasks"),
+    where("tagKey","==", currentTagKey),
+    orderBy("task")
+  );
+
   unsubTasks = onSnapshot(qy, (snap)=>{
     const tasks = snap.docs.map(d=>({ id:d.id, ...d.data() }));
     renderTasks(tasks);
   });
 }
 
-function closeTag(){
-  currentTagId = null;
-  show(tagDetail, false);
-  if(unsubTasks){ unsubTasks(); unsubTasks=null; }
-}
-
-async function adminAddTask(){
-  if(!isAdmin) return;
-  if(!currentTagId){ alert("Öffne zuerst einen Tag."); return; }
-  const txt = prompt("Neuer Task Text:");
-  if(!txt) return;
-  const tagId = currentTagId;
-  const key = tagKey(tagId);
-  const id = `${key}_${Date.now()}`;
-  await setDoc(doc(db,"daily_tasks",id), {
-    tagId,
-    tagKey: key,
-    task: n(txt),
-    status: "❌",
-    doneBy: [],
-    doneAtLast: "",
-    finalOk: false,
-    finalBy: "",
-    pointsBooked: false,
-    bookedFor: [],
-    updatedAt: serverTimestamp()
-  });
-}
-
-async function markDone(){
-  if(!selectedTaskIds.size){
-    alert("Keine Aufgaben ausgewählt.");
-    return;
-  }
-  if(!myDisplayName){
-    alert("Kein Benutzername gesetzt. Bitte neu anmelden.");
+function renderTasks(tasks){
+  taskList.innerHTML = "";
+  if(!tasks.length){
+    taskList.innerHTML = `<div class="muted">Keine Aufgaben für diesen Tag.</div>`;
     return;
   }
 
-  const now = new Date();
-  const pad = (x)=>String(x).padStart(2,"0");
-  const stamp = `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  tasks.forEach(t=>{
+    const doneBy = Array.isArray(t.doneBy) ? t.doneBy.join(", ") : "";
+    const ok = (t.status === "✅");
+    const finalOk = !!t.finalOk;
 
-  const doneNames = [myDisplayName, ...selectedEmployees].filter(Boolean);
+    const div = document.createElement("div");
+    div.className="item";
+    div.innerHTML = `
+      <label class="check">
+        <input type="checkbox" data-id="${t.id}" ${ok?"checked":""} />
+        <span class="title">${escapeHtml(t.task||"")}</span>
+      </label>
+      <div class="sub muted small">
+        ${doneBy ? `Erledigt von: ${escapeHtml(doneBy)}` : ""}
+        ${finalOk ? ` · 🧾 Endkontrolle: ${escapeHtml(t.finalBy||"")}` : ""}
+      </div>
+      ${isAdmin ? `
+        <div class="actions">
+          <button class="btn ghost" data-edit="1">✏️</button>
+          <button class="btn ghost" data-reset="1">↩️</button>
+          <button class="btn ghost" data-final="1">🧾</button>
+          <button class="btn ghost" data-del="1">🗑️</button>
+        </div>
+      ` : ``}
+    `;
 
-  const ids = Array.from(selectedTaskIds);
-  for(const id of ids){
-    await updateDoc(doc(db,"daily_tasks",id), {
-      status:"✅",
-      doneBy: arrayUnion(...doneNames),
-      doneAtLast: stamp,
-      updatedAt: serverTimestamp()
-    });
-  }
-  selectedTaskIds = new Set();
-  updateSelectedCount();
-}
-
-function renderRides(docs){
-  ridesList.innerHTML = "";
-  if(!docs.length){
-    ridesList.innerHTML = `<div class="muted">Noch keine Fahrten heute.</div>`;
-    return;
-  }
-  docs.forEach((d)=>{
-    const name = d.name || "";
-    const einsaetze = Array.isArray(d.einsaetze) ? d.einsaetze : [];
-    const wrap = document.createElement("div");
-    wrap.className = "item";
-    wrap.innerHTML = `<div class="main">
-      <div class="title">👤 ${escapeHtml(name)}</div>
-      <div class="sub">${einsaetze.length} Einsatz(e)</div>
-      <div class="sub" style="margin-top:8px" id="einsaetze"></div>
-    </div>
-    <div class="actions">
-      ${isAdmin ? '<button class="btn ghost" data-delperson="1">Person löschen</button>' : ''}
-    </div>`;
-    const list = wrap.querySelector("#einsaetze");
-    einsaetze.forEach((e)=>{
-      const row = document.createElement("div");
-      row.className = "row";
-      row.innerHTML = `<span class="pill">${escapeHtml(e)}</span><button class="btn ghost">Löschen</button>`;
-      row.querySelector("button").onclick = async ()=>{
-        const day = todayKey();
-        await updateDoc(doc(db,"rides_daily",day,"people", d.id), {
-          einsaetze: arrayRemove(e),
+    const cb = div.querySelector("input[type=checkbox]");
+    cb.onchange = async ()=>{
+      if(cb.checked){
+        // mark done with my name
+        const nm = myDisplayName || n(usernameSel.value);
+        if(!nm){
+          alert("Bitte zuerst Name auswählen und Start drücken.");
+          cb.checked = false;
+          return;
+        }
+        await updateDoc(doc(db,"daily_tasks",t.id), {
+          status:"✅",
+          doneBy: arrayUnion(nm),
+          doneAtLast: stamp(),
           updatedAt: serverTimestamp()
         });
-      };
-      list.appendChild(row);
-    });
-
-    const delBtn = wrap.querySelector('[data-delperson="1"]');
-    if(delBtn){
-      delBtn.onclick = async ()=>{
-        if(confirm("Person für heute komplett löschen?")){
-          const day = todayKey();
-          await deleteDoc(doc(db,"rides_daily",day,"people", d.id));
+      }else{
+        if(!isAdmin){
+          alert("Nur Admin kann zurücksetzen.");
+          cb.checked = true;
+          return;
         }
+        await updateDoc(doc(db,"daily_tasks",t.id), {
+          status:"❌",
+          doneBy: [],
+          doneAtLast: "",
+          finalOk:false,
+          finalBy:"",
+          pointsBooked:false,
+          bookedFor: [],
+          updatedAt: serverTimestamp()
+        });
+      }
+    };
+
+    if(isAdmin){
+      div.querySelector('[data-edit="1"]').onclick = async ()=>{
+        const nt = prompt("Aufgabe bearbeiten:", t.task||"");
+        if(nt == null) return;
+        await updateDoc(doc(db,"daily_tasks",t.id), { task:n(nt), updatedAt: serverTimestamp() });
+      };
+      div.querySelector('[data-reset="1"]').onclick = async ()=>{
+        if(!confirm("Aufgabe zurücksetzen?")) return;
+        await updateDoc(doc(db,"daily_tasks",t.id), {
+          status:"❌", doneBy:[], doneAtLast:"", finalOk:false, finalBy:"",
+          pointsBooked:false, bookedFor:[], updatedAt: serverTimestamp()
+        });
+      };
+      div.querySelector('[data-final="1"]').onclick = async ()=>{
+        if(t.status !== "✅"){
+          alert("Endkontrolle nur bei ✅.");
+          return;
+        }
+        await updateDoc(doc(db,"daily_tasks",t.id), { finalOk: !t.finalOk, finalBy: myDisplayName, updatedAt: serverTimestamp() });
+      };
+      div.querySelector('[data-del="1"]').onclick = async ()=>{
+        if(!confirm("Aufgabe löschen?")) return;
+        await deleteDoc(doc(db,"daily_tasks",t.id));
       };
     }
 
-    ridesList.appendChild(wrap);
+    taskList.appendChild(div);
   });
 }
 
+// ---------- Rides ----------
 async function addRide(){
-  const name = n(rideName.value);
-  const einsatz = n(rideEinsatz.value);
-  if(!name || !einsatz){ alert("Name und Einsatznummer nötig."); return; }
+  const name = n(rideNameSel.value);
+  const eins = n(rideEinsatz.value);
+  if(!name){ alert("Name fehlt."); return; }
+  if(!eins){ alert("Einsatznummer fehlt."); return; }
+
   const day = todayKey();
-  const id = tagKey(name);
-  await setDoc(doc(db,"rides_daily",day,"people",id), {
-    name,
-    einsaetze: arrayUnion(einsatz),
-    updatedAt: serverTimestamp()
-  }, { merge:true });
+  const ref = doc(db, "rides_daily", day, "people", canonKey_(name));
+  const snap = await getDoc(ref);
+  const data = snap.exists() ? snap.data() : { name, rides:[] };
+
+  const rides = Array.isArray(data.rides) ? data.rides.slice(0) : [];
+  rides.push({ einsatz:eins, at: stamp() });
+
+  await setDoc(ref, { name, rides, updatedAt: serverTimestamp() }, { merge:true });
+
   rideEinsatz.value = "";
+  alert("Fahrt gespeichert ✓");
 }
 
-async function loadPoints(){
-  if(!isAdmin) return;
-  pointsList.innerHTML = `<div class="muted">Lade…</div>`;
-  const qy = query(collection(db,"employees"), orderBy("name"));
-  const snap = await getDocs(qy);
-  const items = snap.docs.map(d=>({ id:d.id, ...d.data() }));
-  pointsList.innerHTML = "";
-  if(!items.length){
-    pointsList.innerHTML = `<div class="muted">Keine Daten in employees/.</div>`;
-    return;
-  }
-  items.forEach((e)=>{
-    const it = document.createElement("div");
-    it.className = "item";
-    it.innerHTML = `<div class="main">
-      <div class="title">⭐ ${escapeHtml(e.name||"")}</div>
-      <div class="sub">Aufgabenpunkte: ${e.taskPoints ?? 0} • Fahrtenpunkte: ${e.ridePoints ?? 0}</div>
-    </div>
-    <div class="actions">
-      <button class="btn ghost">Bearbeiten</button>
-    </div>`;
-    it.querySelector("button").onclick = async ()=>{
-      const tp = prompt("Aufgabenpunkte:", String(e.taskPoints ?? 0));
-      if(tp === null) return;
-      const rp = prompt("Fahrtenpunkte:", String(e.ridePoints ?? 0));
-      if(rp === null) return;
-      await setDoc(doc(db,"employees", e.id), {
-        name: e.name || e.id,
-        taskPoints: Number(tp)||0,
-        ridePoints: Number(rp)||0,
-        updatedAt: serverTimestamp()
-      }, { merge:true });
-      await loadPoints();
+// ---------- Admin: Employees list ----------
+function renderAdminEmployees(list){
+  adminEmployeesList.innerHTML = "";
+  list.forEach(name=>{
+    const div = document.createElement("div");
+    div.className="item";
+    div.innerHTML = `
+      <div class="main"><div class="title">${escapeHtml(name)}</div></div>
+      <div class="actions"><button class="btn ghost" data-del="1">🗑️</button></div>
+    `;
+    div.querySelector('[data-del="1"]').onclick = async ()=>{
+      if(!confirm(`"${name}" löschen?`)) return;
+      // doc id = canonKey(name) in our schema
+      await deleteDoc(doc(db,"employees_public", canonKey_(name)));
     };
-    pointsList.appendChild(it);
+    adminEmployeesList.appendChild(div);
   });
 }
 
-async function loadEmployeesPublic(){
-  if(unsubEmployeesPublic) unsubEmployeesPublic();
-  unsubEmployeesPublic = onSnapshot(query(collection(db,"employees_public"), orderBy("name")), (snap)=>{
-    const list = snap.docs.map(d=>({ id:d.id, ...d.data() }));
-    // login dropdown
-    const names = list.map(x=>x.name).filter(Boolean);
-    renderUserSelect(names);
-
-    // admin list
-    renderEmployeesPublicAdmin(list);
-  });
+async function addEmployee(){
+  const name = n(addEmployeeInput.value);
+  if(!name){ alert("Name fehlt."); return; }
+  await setDoc(doc(db,"employees_public", canonKey_(name)), { name, createdAt: serverTimestamp() }, { merge:true });
+  addEmployeeInput.value="";
 }
 
-function renderUserSelect(list){
-  userSelect.innerHTML = "";
-  if(!list.length){
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "Keine Mitarbeiter – Admin muss Liste anlegen";
-    userSelect.appendChild(opt);
-    userSelect.disabled = true;
-    userLoginBtn.disabled = true;
-    return;
-  }
-  userSelect.disabled = false;
-  userLoginBtn.disabled = false;
-
-  list.forEach((name)=>{
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
-    userSelect.appendChild(opt);
-  });
+// ---------- Admin: Tags ----------
+async function addTag(){
+  const tid = n(addTagInput.value);
+  if(!tid){ alert("Tag_ID fehlt."); return; }
+  const key = canonKey_(tid);
+  await setDoc(doc(db,"tags", key), { tagId: tid, tagKey:key, createdAt: serverTimestamp() }, { merge:true });
+  addTagInput.value="";
 }
 
-function renderEmployeesPublicAdmin(list){
-  employeesPublicList.innerHTML = "";
-  if(!isAdmin){
-    employeesPublicList.innerHTML = `<div class="muted">Nur Admins.</div>`;
-    return;
-  }
-  if(!list.length){
-    employeesPublicList.innerHTML = `<div class="muted">Noch keine Mitarbeiter.</div>`;
-    return;
-  }
-  list.forEach((e)=>{
-    const it = document.createElement("div");
-    it.className = "item";
-    it.innerHTML = `<div class="main">
-      <div class="title">👤 ${escapeHtml(e.name||"")}</div>
-      <div class="sub">${escapeHtml(e.id)}</div>
-    </div>
-    <div class="actions">
-      <button class="btn ghost">Löschen</button>
-    </div>`;
-    it.querySelector("button").onclick = async ()=>{
-      if(confirm("Mitarbeiter löschen?")){
-        await deleteDoc(doc(db,"employees_public", e.id));
+function renderAdminTags(tags){
+  adminTagsList.innerHTML = "";
+  tags.forEach(t=>{
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `
+      <div class="main">
+        <div class="title">🏷️ ${escapeHtml(t.tagId||t.id)}</div>
+        <div class="sub muted small">${escapeHtml(t.id)}</div>
+      </div>
+      <div class="actions">
+        <button class="btn ghost" data-open="1">Öffnen</button>
+        <button class="btn ghost" data-del="1">🗑️</button>
+      </div>
+    `;
+    div.querySelector('[data-open="1"]').onclick = ()=> openTag(t.tagId||t.id);
+    div.querySelector('[data-del="1"]').onclick = async ()=>{
+      if(!confirm("Tag + ALLE Tasks zu diesem Tag wirklich löschen?")) return;
+      try{
+        const res = await clientDeleteTagWithTasks_(t.id);
+        alert(`Gelöscht ✓ (Tasks: ${res.deletedTasks})`);
+      }catch(e){
+        alert("Fehler: " + (e?.message || e));
       }
     };
-    employeesPublicList.appendChild(it);
+    adminTagsList.appendChild(div);
   });
-}
-
-async function addEmployeePublic(){
-  if(!isAdmin){ alert("Nur Admins."); return; }
-  const name = n(newEmployeeName.value);
-  if(!name) return;
-  const id = tagKey(name);
-  await setDoc(doc(db,"employees_public",id), { name, updatedAt: serverTimestamp() }, { merge:true });
-  newEmployeeName.value = "";
 }
 
 async function loadAdminTags(){
   if(unsubAdminTags) unsubAdminTags();
   unsubAdminTags = onSnapshot(query(collection(db,"tags"), orderBy("tagId")), (snap)=>{
-    const list = snap.docs.map(d=>({ id:d.id, ...d.data() }));
-    renderAdminTags(list);
+    const tags = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    renderAdminTags(tags);
   });
 }
 
-function renderAdminTags(list){
-  adminTagsList.innerHTML = "";
-  if(!isAdmin){
-    adminTagsList.innerHTML = `<div class="muted">Nur Admins.</div>`;
-    return;
-  }
-  if(!list.length){
-    adminTagsList.innerHTML = `<div class="muted">Keine Tags.</div>`;
-    return;
-  }
-  list.forEach((t)=>{
-    const it = document.createElement("div");
-    it.className = "item";
-    it.innerHTML = `<div class="main">
-      <div class="title">🏷️ ${escapeHtml(t.tagId||"")}</div>
-      <div class="sub">${escapeHtml(t.tagKey||t.id)}</div>
-    </div>
-    <div class="actions">
-      <button class="btn ghost" data-open="1">Öffnen</button>
-      <button class="btn ghost" data-del="1">Löschen</button>
-    </div>`;
-    it.querySelector('[data-open="1"]').onclick = ()=> openTag(t.tagId);
-    it.querySelector('[data-del="1"]').onclick = async ()=>{
-  if(!confirm("Tag + ALLE Tasks zu diesem Tag wirklich löschen?")) return;
-  try{
-    const res = await clientDeleteTagWithTasks_(t.id);
-    alert(`Gelöscht ✓ (Tasks: ${res.deletedTasks})`);
-  }catch(e){
-    alert("Fehler: " + (e?.message || e));
-  }
-};
-    adminTagsList.appendChild(it);
+// ---------- Points (admin only) ----------
+async function loadPoints(){
+  if(unsubPoints) unsubPoints();
+  unsubPoints = onSnapshot(query(collection(db,"employees"), orderBy("name")), (snap)=>{
+    const items = snap.docs.map(d=>({ id:d.id, ...d.data() }));
+    renderPoints(items);
   });
 }
 
-async function addTag(){
-  if(!isAdmin){ alert("Nur Admins."); return; }
-  const tagId = n(newTagId.value);
-  if(!tagId) return;
-  const key = tagKey(tagId);
-  await setDoc(doc(db,"tags", key), { tagId, tagKey:key, updatedAt: serverTimestamp() }, { merge:true });
-  newTagId.value = "";
-}
-
-async function userLoginFlow(){
-  loginErr.textContent = "";
-  try{
-    await ensureAnonAuth();
-    const name = n(userSelect.value);
-    if(!name){
-      alert("Bitte Benutzername auswählen.");
-      return;
-    }
-    await setDoc(doc(db,"users",auth.currentUser.uid), { name, updatedAt: serverTimestamp() }, { merge:true });
-    await refreshClaimsAndProfile();
-  }catch(e){
-    loginErr.textContent = String(e);
-  }
-}
-
-
-async function initPush(){
-  if("serviceWorker" in navigator){
-    await navigator.serviceWorker.register("/sw.js");
-  }
-
-  const supported = await messagingIsSupported().catch(()=>false);
-  if(!supported){
-    alert("Push/Messaging wird in diesem Browser nicht unterstützt. Auf iPad: PWA installieren (Home-Bildschirm).");
+function renderPoints(items){
+  pointsList.innerHTML = "";
+  if(!items.length){
+    pointsList.innerHTML = `<div class="muted">Keine Punkte-Daten.</div>`;
     return;
   }
-
-  const reg = await navigator.serviceWorker.register("/firebase-messaging-sw.js");
-
-  const vapidKey = prompt("VAPID Public Key einfügen (Firebase Console -> Cloud Messaging -> Web Push certificates):");
-  if(!vapidKey) return;
-
-  const messaging = getMessaging(app);
-  const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
-  if(!token){
-    alert("Kein Token erhalten. Prüfe HTTPS + PWA Installation + Permission.");
-    return;
-  }
-
-  await setDoc(doc(db,"device_tokens",token), {
-    token,
-    uid: auth.currentUser?.uid || "",
-    isAdmin,
-    updatedAt: serverTimestamp()
-  }, { merge:true });
-
-  alert("Push aktiviert ✓");
+  items.forEach(p=>{
+    const div = document.createElement("div");
+    div.className="item";
+    div.innerHTML = `
+      <div class="main">
+        <div class="title">${escapeHtml(p.name||p.id)}</div>
+        <div class="sub muted small">Aufgaben: ${Number(p.taskPoints||0)} · Fahrten: ${Number(p.ridePoints||0)}</div>
+      </div>
+      <div class="actions"><button class="btn ghost" data-edit="1">✏️</button></div>
+    `;
+    div.querySelector('[data-edit="1"]').onclick = async ()=>{
+      const tp = prompt("Aufgabenpunkte:", String(Number(p.taskPoints||0)));
+      if(tp == null) return;
+      const rp = prompt("Fahrtenpunkte:", String(Number(p.ridePoints||0)));
+      if(rp == null) return;
+      await setDoc(doc(db,"employees", p.id), {
+        name: p.name || p.id,
+        taskPoints: Number(tp||0),
+        ridePoints: Number(rp||0),
+        updatedAt: serverTimestamp()
+      }, { merge:true });
+    };
+    pointsList.appendChild(div);
+  });
 }
 
+// ---------- Ultra Admin Mode helpers ----------
 async function clientDeleteTagWithTasks_(tagKeyStr){
   if(!isAdmin) throw new Error("Nur Admins.");
   const key = String(tagKeyStr||"").trim();
@@ -785,7 +631,6 @@ function groupUltra(tasks){
     if(status !== "✅"){
       g.tasks.push(t);
     }
-    // prefer nicer tagId if present
     if(t.tagId && t.tagId.length > (g.tagId||"").length) g.tagId = t.tagId;
   });
   const arr = Array.from(byTag.values()).sort((a,b)=> (a.tagId||"").localeCompare(b.tagId||""));
@@ -832,7 +677,7 @@ function renderUltraDashboard(){
   filtered.forEach(g=>{
     const wrap = document.createElement("details");
     wrap.className = "cardlite";
-    wrap.open = g.open > 0; // auto-open if open tasks
+    wrap.open = g.open > 0;
     wrap.innerHTML = `
       <summary>
         <div class="detailsRow">
@@ -854,7 +699,6 @@ function renderUltraDashboard(){
     wrap.querySelector('[data-open="1"]').onclick = ()=> openTag(g.tagId);
     wrap.querySelector('[data-reset="1"]').onclick = async ()=>{
       if(!confirm(`Wirklich ALLE Aufgaben für "${g.tagId}" zurücksetzen?`)) return;
-      // reset all tasks (both done and open)
       const all = ultraData.tasks.filter(t => (t.tagKey||"") === g.tagKey);
       for(const t of all){
         await updateDoc(doc(db,"daily_tasks",t.id), {
@@ -864,15 +708,6 @@ function renderUltraDashboard(){
       }
       alert("Tag zurückgesetzt ✓");
     };
-    wrap.querySelector('[data-deltag="1"]').onclick = async ()=>{
-      if(!confirm(`Tag "${g.tagId}" + ALLE Tasks löschen?`)) return;
-      try{
-        
-        const res = await clientDeleteTagWithTasks_(g.tagKey);
-        alert(`Tag gelöscht ✓ (Tasks: ${res.deletedTasks})`);
-      }catch(e){ alert("Fehler: " + (e?.message || e)); }
-    };
-
     wrap.querySelector('[data-finalall="1"]').onclick = async ()=>{
       if(!confirm(`Endkontrolle für alle erledigten Aufgaben in "${g.tagId}" setzen?`)) return;
       const allDone = ultraData.tasks.filter(t => (t.tagKey||"") === g.tagKey && (t.status==="✅") && !t.finalOk);
@@ -880,6 +715,13 @@ function renderUltraDashboard(){
         await updateDoc(doc(db,"daily_tasks",t.id), { finalOk:true, finalBy: myDisplayName, updatedAt: serverTimestamp() });
       }
       alert("Endkontrolle gesetzt ✓");
+    };
+    wrap.querySelector('[data-deltag="1"]').onclick = async ()=>{
+      if(!confirm(`Tag "${g.tagId}" + ALLE Tasks löschen?`)) return;
+      try{
+        const res = await clientDeleteTagWithTasks_(g.tagKey);
+        alert(`Tag gelöscht ✓ (Tasks: ${res.deletedTasks})`);
+      }catch(e){ alert("Fehler: " + (e?.message || e)); }
     };
 
     const list = wrap.querySelector('[data-list="1"]');
@@ -902,10 +744,7 @@ function renderUltraDashboard(){
           </div>
         `;
         it.querySelector('[data-done="1"]').onclick = async ()=>{
-          const now = new Date();
-          const pad = (x)=>String(x).padStart(2,"0");
-          const stamp = `${pad(now.getDate())}.${pad(now.getMonth()+1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-          await updateDoc(doc(db,"daily_tasks",t.id), { status:"✅", doneBy: arrayUnion(myDisplayName), doneAtLast: stamp, updatedAt: serverTimestamp() });
+          await updateDoc(doc(db,"daily_tasks",t.id), { status:"✅", doneBy: arrayUnion(myDisplayName), doneAtLast: stamp(), updatedAt: serverTimestamp() });
         };
         it.querySelector('[data-edit="1"]').onclick = async ()=>{
           const nt = prompt("Task Text:", t.task||"");
@@ -932,49 +771,57 @@ function renderUltraDashboard(){
 
 async function startUltraTasksStream(){
   if(unsubUltraTasks) unsubUltraTasks();
-  // Keep it simple: all tasks snapshot (admin only)
   unsubUltraTasks = onSnapshot(query(collection(db,"daily_tasks"), orderBy("tagKey"), orderBy("task")), (snap)=>{
     ultraData.tasks = snap.docs.map(d=>({ id:d.id, ...d.data() }));
     renderUltraDashboard();
   });
 }
 
-function bind(){
-  userLoginBtn.onclick = userLoginFlow;
-  adminPinBtn.onclick = adminPinFlow;
-  logoutBtn.onclick = ()=> signOut(auth);
+// ---------- Actions ----------
+async function login(){
+  const name = n(usernameSel.value);
+  if(!name){ alert("Bitte Name auswählen."); return; }
+  await ensureAnonAuth();
+  await ensureUserProfile_(name);
+  await refreshClaimsAndProfile();
 
+  doneAsName.textContent = `Angemeldet als: ${myDisplayName || name}`;
+  show(loginView, false);
+  show(appView, true);
+}
+
+async function logout(){
+  try{
+    if(unsubTasks) unsubTasks();
+    if(unsubTags) unsubTags();
+    currentTagId = "";
+    currentTagKey = "";
+    await signOut(auth);
+  }catch(e){}
+  location.reload();
+}
+
+function closeTag(){
+  currentTagId = "";
+  currentTagKey = "";
+  if(unsubTasks) unsubTasks();
+  openTagTitle.textContent = "Kein Tag geöffnet";
+  taskList.innerHTML = "";
+  show(loginView, false);
+  show(appView, true);
+}
+
+// ---------- Bind ----------
+function bind(){
+  tagSearch.oninput = ()=> loadTags(); // will re-render on snapshot anyway
   closeTagBtn.onclick = closeTag;
 
-  addEmployeeBtn.onclick = ()=>{
-    const name = n(employeeName.value);
-    if(!name) return;
-    if(!selectedEmployees.some(x=>x.toLowerCase()===name.toLowerCase())){
-      selectedEmployees.push(name);
-      renderChips();
-    }
-    employeeName.value = "";
-  };
+  loginBtn.onclick = login;
+  logoutBtn.onclick = logout;
 
-  markDoneBtn.onclick = markDone;
   addRideBtn.onclick = addRide;
-  refreshPointsBtn.onclick = loadPoints;
-  enablePushBtn.onclick = initPush;
-  if(showUidBtn){
-    showUidBtn.onclick = async ()=>{
-      try{
-        await ensureAnonAuth();
-        const uid = auth.currentUser?.uid || "";
-        if(!uid){ alert("Keine UID."); return; }
-        uidBox.textContent = "UID: " + uid + " (tippen zum Kopieren)";
-        uidBox.onclick = async ()=>{
-          try{ await navigator.clipboard.writeText(uid); alert("UID kopiert ✓"); }catch(e){ alert(uid); }
-        };
-      }catch(e){ alert(String(e?.message||e)); }
-    };
-  }
 
-  addEmployeePublicBtn.onclick = addEmployeePublic;
+  addEmployeeBtn.onclick = addEmployee;
   addTagBtn.onclick = addTag;
 
   // Ultra Admin Mode
@@ -1000,7 +847,6 @@ function bind(){
     if(!isAdmin) return;
     if(!confirm("Tageswechsel starten?\n\nDas archiviert ALLE heutigen Aufgaben + Fahrten und leert die aktuellen Listen.")) return;
     try{
-      
       const res = await clientRunDayChange_();
       alert(`Tageswechsel OK ✓\nTag: ${res.dayKey}\nArchivierte Aufgaben: ${res.archivedTasks}\nArchivierte Fahrten: ${res.archivedRides}`);
     }catch(e){
@@ -1008,86 +854,81 @@ function bind(){
     }
   };
 
-  // Admin: add task via long-press? add button by double click on title
-  tagTitle.ondblclick = ()=> adminAddTask();
+  // UID button (works even before Start)
+  if(showUidBtn){
+    showUidBtn.onclick = async ()=>{
+      try{
+        await ensureAnonAuth();
+        await refreshClaimsAndProfile();
+        const uid = auth.currentUser?.uid || "";
+        if(!uid){ alert("Keine UID."); return; }
+        uidBox.textContent = "UID: " + uid + " (tippen zum Kopieren)";
+        uidBox.onclick = async ()=>{
+          try{
+            await navigator.clipboard.writeText(uid);
+            alert("UID kopiert ✓");
+          }catch(e){
+            alert(uid);
+          }
+        };
+        alert("Deine UID:\n" + uid);
+      }catch(e){
+        alert("UID Fehler: " + (e?.message || e));
+      }
+    };
+  }
 
-  navigator.serviceWorker?.addEventListener?.("message", (event)=>{
-    const msg = event.data || {};
-    if(msg.type === "push_click"){
-      alert("Push geöffnet: " + JSON.stringify(msg.data || {}, null, 2));
+  // Add task: double click title
+  openTagTitle.ondblclick = async ()=>{
+    if(!isAdmin) return;
+    if(!currentTagKey){ alert("Bitte erst Tag öffnen."); return; }
+    const t = prompt("Neue Aufgabe:");
+    if(!t) return;
+    await addDoc(collection(db,"daily_tasks"), {
+      tagId: currentTagId,
+      tagKey: currentTagKey,
+      task: n(t),
+      status: "❌",
+      doneBy: [],
+      doneAtLast: "",
+      finalOk: false,
+      finalBy: "",
+      pointsBooked: false,
+      bookedFor: [],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  };
+}
+
+// ---------- App start ----------
+document.addEventListener("DOMContentLoaded", async ()=>{
+  bind();
+
+  // Setup view already handled above when firebaseConfig missing
+
+  show(loginView, true);
+  show(appView, false);
+
+  onAuthStateChanged(auth, async (u)=>{
+    if(!u){
+      // Stay on login view until Start
+      show(pointsCard, false);
+      show(adminCard, false);
+      doneAsName.textContent = "";
+      loadEmployees();
+      loadTags();
+      return;
+    }
+
+    await refreshClaimsAndProfile();
+    loadEmployees();
+    loadTags();
+
+    if(isAdmin){
+      await loadAdminTags();
+      await loadPoints();
+      await startUltraTasksStream();
     }
   });
-}
-
-async function startStreams(){
-  // tags list for everyone (read-only)
-  let lastTagDocs = [];
-  if(unsubTags) unsubTags();
-  unsubTags = onSnapshot(query(collection(db,"tags"), orderBy("tagId")), (snap)=>{
-    lastTagDocs = snap.docs.map(d=>d.data());
-    const q = n(tagSearch.value).toLowerCase();
-    const filtered = lastTagDocs.filter(d => !q || String(d.tagId||"").toLowerCase().includes(q));
-    renderTags(filtered);
-  });
-  tagSearch.oninput = ()=>{
-    // handled by snapshot store above; keep simple: no-op (it rerenders on next snapshot).
-    // quick rerender:
-    const q = n(tagSearch.value).toLowerCase();
-    renderTags(lastTagDocs.filter(d => !q || String(d.tagId||"").toLowerCase().includes(q)));
-  };
-
-  // rides for today
-  const day = todayKey();
-  dayKeyEl.textContent = day;
-  if(unsubRides) unsubRides();
-  unsubRides = onSnapshot(query(collection(db,"rides_daily",day,"people"), orderBy("name")), (snap)=>{
-    const docs = snap.docs.map(d=>({ id:d.id, ...d.data() }));
-    renderRides(docs);
-  });
-}
-
-bind();
-
-// Load employees list (requires auth; we sign in anonymously once)
-ensureAnonAuth().then(loadEmployeesPublic).catch(()=>{});
-
-onAuthStateChanged(auth, async (user)=>{
-  if(!user){
-    show(loginView, true);
-    show(appView, false);
-    show(logoutBtn, false);
-    who.textContent = "";
-    show(enablePushBtn, false);
-    return;
-  }
-
-  await refreshClaimsAndProfile();
-
-  if(!myDisplayName){
-    show(loginView, true);
-    show(appView, false);
-    show(logoutBtn, true);
-    who.textContent = "Gast (Name wählen)";
-    show(enablePushBtn, false);
-    // still load employees list
-    await loadEmployeesPublic();
-    return;
-  }
-
-  show(loginView, false);
-  show(appView, true);
-  show(logoutBtn, true);
-  who.textContent = myDisplayName + (isAdmin ? " (Admin)" : "");
-  show(enablePushBtn, true);
-
-  if("serviceWorker" in navigator){
-    try { await navigator.serviceWorker.register("/sw.js"); } catch(e){}
-  }
-
-  await startStreams();
-
-  if(isAdmin){
-    await loadAdminTags();
-    await loadPoints();
-  }
 });
