@@ -1,111 +1,48 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+/**
+ * FCM Messaging SW (Web Push)
+ * Notes:
+ * - Must be served from root: /firebase-messaging-sw.js
+ * - iOS/iPadOS: Web Push works only for installed PWA and requires visible notification. citeturn0search14
+ */
 
-<title>Aufgaben & Fahrten</title>
+// IMPORTANT: Fill with your firebase config values:
+const firebaseConfig = {
+  // apiKey: "...",
+  // authDomain: "...",
+  // projectId: "...",
+  // messagingSenderId: "...",
+  // appId: "..."
+};
 
-<link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="styles.css">
+importScripts("https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js");
+importScripts("https://www.gstatic.com/firebasejs/10.12.5/firebase-messaging-compat.js");
 
-</head>
+try {
+  firebase.initializeApp(firebaseConfig);
+  const messaging = firebase.messaging();
 
-<body>
+  messaging.onBackgroundMessage((payload) => {
+    // Safari requires presenting a notification; no silent pushes. citeturn0search14
+    const title = (payload?.notification?.title) || "Benachrichtigung";
+    const body = (payload?.notification?.body) || "";
+    self.registration.showNotification(title, {
+      body,
+      data: payload?.data || {},
+    });
+  });
+} catch (e) {
+  // ignore
+}
 
-<h2>Aufgaben & Fahrten</h2>
-
-<button onclick="location.reload()">Logout</button>
-
-<h2>Anmeldung</h2>
-
-<p>Login ohne Email: Benutzername aus Mitarbeiterliste auswählen.</p>
-
-<select id="username"></select>
-
-<button id="startBtn">Start</button>
-
-<button id="enablePushBtn">🔔 Push aktivieren</button>
-
-<details>
-<summary>Admin freischalten (iPad-only)</summary>
-
-<p>
-Ultra Version benötigt keine PIN.
-Admin wird über Firestore UID erkannt.
-</p>
-
-<button id="showUidBtn">Meine UID anzeigen</button>
-
-<div id="uidBox"></div>
-
-</details>
-
-<hr>
-
-<h2>Tags</h2>
-
-<input placeholder="Suche Tag_ID" id="tagSearch">
-
-<div id="tagList"></div>
-
-<hr>
-
-<h2>Tag</h2>
-
-<button id="closeTag">Schließen</button>
-
-<input id="newTask" placeholder="Mitarbeiter (Anna, Max...)">
-
-<button id="addTask">Add</button>
-
-<button id="markDone">✅ Mark Done</button>
-
-<div id="taskList"></div>
-
-<hr>
-
-<h2>Fahrten (heute)</h2>
-
-<input id="rideName" placeholder="Name">
-
-<input id="rideNumber" placeholder="Einsatznummer">
-
-<button id="addRide">Add Fahrt</button>
-
-<hr>
-
-<h2>Admin</h2>
-
-<div id="adminPanel">
-
-<h3>Mitarbeiter (Login-Namen)</h3>
-
-<input id="newEmployee" placeholder="Name hinzufügen">
-
-<button id="addEmployee">Hinzufügen</button>
-
-<div id="employeeList"></div>
-
-<h3>Tags</h3>
-
-<input id="newTag" placeholder="Neue Tag_ID">
-
-<button id="addTag">Tag hinzufügen</button>
-
-<h3>Punkte bearbeiten</h3>
-
-<p>Tippe auf einen Mitarbeiter um Punkte zu ändern.</p>
-
-<h3>Punkte (nur Admin)</h3>
-
-<button id="refreshPoints">Refresh</button>
-
-<div id="pointsList"></div>
-
-</div>
-
-<script type="module" src="app.js"></script>
-
-</body>
-</html>
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil((async ()=>{
+    const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (allClients.length > 0) {
+      allClients[0].focus();
+      allClients[0].postMessage({ type: "push_click", data: event.notification.data || {} });
+    } else {
+      clients.openWindow("/");
+    }
+  })());
+});
