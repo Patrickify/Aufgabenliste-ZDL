@@ -65,3 +65,43 @@ h3{margin:10px 0 6px 0;font-size:16px}
 .kpi .pill{font-size:12px}
 
 textarea.input{width:100%;resize:vertical;}
+const CACHE = "ultra-final-v1";
+const ASSETS = [
+  "./",
+  "./index.html",
+  "./app.js",
+  "./styles.css",
+  "./manifest.json"
+];
+
+self.addEventListener("install", (e) => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(()=>self.skipWaiting()));
+});
+
+self.addEventListener("activate", (e) => {
+  e.waitUntil((async ()=>{
+    const keys = await caches.keys();
+    await Promise.all(keys.map(k => (k===CACHE)?null:caches.delete(k)));
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener("fetch", (e) => {
+  const req = e.request;
+  e.respondWith((async ()=>{
+    const cached = await caches.match(req);
+    if(cached) return cached;
+    try{
+      const res = await fetch(req);
+      const url = new URL(req.url);
+      if(url.origin === location.origin){
+        const c = await caches.open(CACHE);
+        c.put(req, res.clone());
+      }
+      return res;
+    }catch(err){
+      return cached || new Response("Offline", { status: 200 });
+    }
+  })());
+});
+
