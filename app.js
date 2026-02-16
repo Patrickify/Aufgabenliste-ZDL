@@ -15,6 +15,11 @@ import {
    - Admin: manage employees, tags, tasks, final-check, reset, day-change, dashboard
    - Superadmin: can grant up to 3 superadmins and 8 admins
    - Bootstrap: first ever user becomes superadmin (only if none exists)
+
+   FIXES:
+   ✅ employees_public stream WITHOUT orderBy + error callback
+   ✅ seed Patrick shows errors in UI if rules block writes
+   ✅ Brand/title set to "Aufgabenliste ZDL RA 93"
    ========================================================= */
 
 /* ---------------- Firebase config (fixed) ---------------- */
@@ -54,6 +59,18 @@ const dayKey = () => {
   return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}`;
 };
 const uniq = (arr) => Array.from(new Set((arr||[]).map(x=>n(x)).filter(Boolean)));
+
+function setBrand_(){
+  try{
+    document.title = "Aufgabenliste ZDL RA 93";
+    const brandEl = document.querySelector(".brand");
+    if(brandEl) brandEl.textContent = "Aufgabenliste ZDL RA 93";
+  }catch(e){}
+}
+
+function setLoginError_(msg){
+  if(loginErr) loginErr.textContent = msg ? String(msg) : "";
+}
 
 /* ---------------- DOM ---------------- */
 const loginView = $("loginView");
@@ -199,16 +216,21 @@ async function bootstrapSuperAdminOnce_(){
 
 /* ---------------- seed first employee: Patrick ---------------- */
 async function seedFirstEmployeeIfEmpty_(){
-  const snap = await getDocs(query(collection(db,"employees_public"), limit(1)));
-  if(!snap.empty) return;
+  try{
+    const snap = await getDocs(query(collection(db,"employees_public"), limit(1)));
+    if(!snap.empty) return;
 
-  const firstName = "Patrick";
-  await setDoc(doc(db,"employees_public", key(firstName)), {
-    name: firstName,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-    seeded: true
-  }, { merge:true });
+    const firstName = "Patrick";
+    await setDoc(doc(db,"employees_public", key(firstName)), {
+      name: firstName,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      seeded: true
+    }, { merge:true });
+  }catch(e){
+    console.error("seedFirstEmployeeIfEmpty_ failed:", e);
+    setLoginError_("❌ Mitarbeiterliste konnte nicht erstellt werden (Firestore Rules blockieren Schreiben).");
+  }
 }
 
 /* ---------------- role refresh ---------------- */
@@ -257,10 +279,10 @@ copyUidBtn && (copyUidBtn.onclick = async () => {
 });
 
 loginBtn && (loginBtn.onclick = async () => {
-  loginErr && (loginErr.textContent = "");
+  setLoginError_("");
   const nm = n(nameSel?.value);
   if(!nm){
-    if(loginErr) loginErr.textContent = "Bitte Name wählen.";
+    setLoginError_("Bitte Name wählen.");
     return;
   }
 
@@ -400,6 +422,13 @@ function enterApp_(){
 }
 
 function renderEmployeeSelectors_(){
+  if(!employees.length){
+    const msg = "Keine Mitarbeiter (Rules/Permissions?)";
+    if(nameSel) nameSel.innerHTML = `<option value="">${esc(msg)}</option>`;
+    if(rideNameSel) rideNameSel.innerHTML = `<option value="">${esc(msg)}</option>`;
+    return;
+  }
+
   const opts = [`<option value="">Name wählen…</option>`].concat(
     employees.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`)
   ).join("");
@@ -411,6 +440,12 @@ function renderEmployeeSelectors_(){
   if(stored){
     if(nameSel) nameSel.value = stored;
     if(rideNameSel) rideNameSel.value = stored;
+  } else {
+    const p = employees.find(x => String(x).toLowerCase() === "patrick");
+    if(p){
+      if(nameSel) nameSel.value = p;
+      if(rideNameSel) rideNameSel.value = p;
+    }
   }
 }
 
@@ -861,13 +896,25 @@ function renderSuperAdmins_(rows){
 
 /* ---------------- streams ---------------- */
 async function startStreams_(){
-  // employees
+  // employees (FIXED: no orderBy + error callback)
   if(unsubEmployees) unsubEmployees();
-  unsubEmployees = onSnapshot(query(collection(db,"employees_public"), orderBy("name")),
+  unsubEmployees = onSnapshot(
+    collection(db,"employees_public"),
     (snap)=>{
-      employees = snap.docs.map(d=>n(d.data().name)).filter(Boolean);
+      employees = snap.docs.map(d=>n(d.data()?.name)).filter(Boolean).sort((a,b)=>a.localeCompare(b));
       renderEmployeeSelectors_();
       if(isAdmin) renderEmployeesAdmin_();
+      if(!employees.length){
+        setLoginError_("❌ Keine Mitarbeiter sichtbar. Prüfe Firestore Rules / Permissions.");
+      }else{
+        setLoginError_("");
+      }
+    },
+    (err)=>{
+      console.error("employees_public snapshot error:", err);
+      setLoginError_("❌ Zugriff auf Mitarbeiterliste verweigert (Firestore Rules).");
+      employees = [];
+      renderEmployeeSelectors_();
     }
   );
 
@@ -916,6 +963,7 @@ async function startStreams_(){
 
 /* ---------------- init ---------------- */
 onAuthStateChanged(auth, async ()=>{
+  setBrand_();
   await ensureAnon_();
 
   if(dayKeyBadge) dayKeyBadge.textContent = dayKey();
