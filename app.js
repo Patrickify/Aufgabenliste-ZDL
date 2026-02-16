@@ -6,15 +6,15 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /* =========================================================
-   ZERO-SETUP ULTRA GOD MODE PRO
-   - Fixed Firebase config (no setup)
-   - Anonymous auth
-   - Login via employees list (admins manage)
-   - Everyone sees all tags
-   - Admin features: employees, tags, tasks, reset, final, day-change, dashboards
-   - Superadmin can grant up to 3 superadmins and 8 admins
-   - Bootstrap: first ever user becomes superadmin (if none exists)
-   - Auto-seed first employee "Patrick" if empty
+   ULTRA GOD MODE (Zero Setup)
+   - Fixed Firebase Config (no setup screen)
+   - Anonymous Auth
+   - Login via employees_public (dropdown)
+   - Auto-seed first employee: Patrick (if list empty)
+   - Everyone sees all tags/tasks
+   - Admin: manage employees, tags, tasks, final-check, reset, day-change, dashboard
+   - Superadmin: can grant up to 3 superadmins and 8 admins
+   - Bootstrap: first ever user becomes superadmin (only if none exists)
    ========================================================= */
 
 /* ---------------- Firebase config (fixed) ---------------- */
@@ -55,7 +55,7 @@ const dayKey = () => {
 };
 const uniq = (arr) => Array.from(new Set((arr||[]).map(x=>n(x)).filter(Boolean)));
 
-/* ---------------- DOM (must exist in index.html) ---------------- */
+/* ---------------- DOM ---------------- */
 const loginView = $("loginView");
 const appView = $("appView");
 
@@ -149,7 +149,7 @@ async function alertSafe_(msg){
   try{ alert(msg); }catch(e){}
 }
 
-/* ---------------- bootstrap: counts doc ---------------- */
+/* ---------------- counts doc ---------------- */
 async function ensureCountsDoc_(){
   const snap = await getDoc(META_COUNTS_REF);
   if(!snap.exists()){
@@ -162,6 +162,15 @@ async function getCounts_(){
   return snap.exists() ? (snap.data()||{}) : { superCount:0, adminCount:0 };
 }
 
+async function setCounts_(superCount, adminCount){
+  await setDoc(META_COUNTS_REF, {
+    superCount: Math.max(0, Number(superCount||0)),
+    adminCount: Math.max(0, Number(adminCount||0)),
+    updatedAt: serverTimestamp(),
+    updatedBy: auth.currentUser.uid
+  }, { merge:true });
+}
+
 async function incCount_(field, delta){
   const snap = await getDoc(META_COUNTS_REF);
   const cur = snap.exists() ? (snap.data()||{}) : {};
@@ -171,7 +180,6 @@ async function incCount_(field, delta){
 
 /* ---------------- bootstrap: first superadmin ---------------- */
 async function bootstrapSuperAdminOnce_(){
-  // if no enabled superadmin exists -> current user becomes superadmin
   const q1 = query(collection(db,"superadmins"), where("enabled","==",true), limit(1));
   const snap = await getDocs(q1);
   if(!snap.empty) return;
@@ -182,15 +190,10 @@ async function bootstrapSuperAdminOnce_(){
     enabled:true, addedAt:serverTimestamp(), addedBy:"BOOTSTRAP"
   }, { merge:true });
 
-  // best-effort set superCount >= 1
+  // set to at least 1
   const counts = await getCounts_();
   if((counts.superCount||0) < 1){
-    await setDoc(META_COUNTS_REF, {
-      superCount: 1,
-      adminCount: counts.adminCount || 0,
-      updatedAt: serverTimestamp(),
-      updatedBy: auth.currentUser.uid
-    }, { merge:true });
+    await setCounts_(1, counts.adminCount||0);
   }
 }
 
@@ -225,7 +228,6 @@ async function refreshRole_(){
   show(adminLock, !isAdmin);
   show(adminArea, isAdmin);
 
-  // superadmin-only actions enabled/disabled
   if(adminUidAddBtn) adminUidAddBtn.disabled = !isSuperAdmin;
   if(superUidAddBtn) superUidAddBtn.disabled = !isSuperAdmin;
 }
@@ -264,11 +266,8 @@ loginBtn && (loginBtn.onclick = async () => {
 
   await ensureAnon_();
   meName = nm;
-
-  // store locally
   localStorage.setItem("meName", nm);
 
-  // store per uid (optional)
   await setDoc(doc(db,"users",auth.currentUser.uid), { name:nm, updatedAt:serverTimestamp() }, { merge:true });
 
   await refreshRole_();
@@ -547,7 +546,6 @@ function renderTasks_(tasks){
       </div>
     `;
 
-    // mark done / reset
     div.querySelector('[data-done="1"]').onclick = async ()=>{
       const nm = meName || n(localStorage.getItem("meName"));
       if(!nm){ await alertSafe_("Bitte einloggen."); return; }
@@ -561,7 +559,6 @@ function renderTasks_(tasks){
           updatedAt: serverTimestamp()
         });
       } else {
-        // reset only admin
         if(!isAdmin){ await alertSafe_("Nur Admin kann zurücksetzen."); return; }
         await updateDoc(doc(db,"daily_tasks",t.id), {
           status:"❌",
@@ -575,7 +572,6 @@ function renderTasks_(tasks){
     };
 
     if(isAdmin){
-      // final toggle
       div.querySelector('[data-final="1"]').onclick = async ()=>{
         if(t.status!=="✅"){ await alertSafe_("Endkontrolle nur bei ✅."); return; }
         await updateDoc(doc(db,"daily_tasks",t.id), {
@@ -585,14 +581,12 @@ function renderTasks_(tasks){
         });
       };
 
-      // edit
       div.querySelector('[data-edit="1"]').onclick = async ()=>{
         const nt = prompt("Aufgabe:", t.task || "");
         if(nt == null) return;
         await updateDoc(doc(db,"daily_tasks",t.id), { task:n(nt), updatedAt:serverTimestamp() });
       };
 
-      // delete
       div.querySelector('[data-del="1"]').onclick = async ()=>{
         if(!confirm("Aufgabe löschen?")) return;
         await deleteDoc(doc(db,"daily_tasks",t.id));
@@ -865,7 +859,7 @@ function renderSuperAdmins_(rows){
   });
 }
 
-/* ---------------- Live streams ---------------- */
+/* ---------------- streams ---------------- */
 async function startStreams_(){
   // employees
   if(unsubEmployees) unsubEmployees();
@@ -896,7 +890,7 @@ async function startStreams_(){
     }
   );
 
-  // admins list
+  // admins
   if(unsubAdmins) unsubAdmins();
   unsubAdmins = onSnapshot(query(collection(db,"admins"), orderBy("addedAt")),
     (snap)=>{
@@ -906,7 +900,7 @@ async function startStreams_(){
     }
   );
 
-  // superadmins list
+  // superadmins
   if(unsubSupers) unsubSupers();
   unsubSupers = onSnapshot(query(collection(db,"superadmins"), orderBy("addedAt")),
     (snap)=>{
@@ -916,34 +910,26 @@ async function startStreams_(){
     }
   );
 
-  // search handlers
   if(tagSearch) tagSearch.oninput = ()=>renderTags_();
   if(godSearch) godSearch.oninput = ()=>renderGod_();
 }
 
-/* ---------------- App init ---------------- */
+/* ---------------- init ---------------- */
 onAuthStateChanged(auth, async ()=>{
   await ensureAnon_();
 
-  // day badge
   if(dayKeyBadge) dayKeyBadge.textContent = dayKey();
 
-  // bootstrap roles + initial data
   await ensureCountsDoc_();
   await bootstrapSuperAdminOnce_();
   await seedFirstEmployeeIfEmpty_();
 
-  // load name from local storage if exists
   const stored = n(localStorage.getItem("meName"));
   if(stored) meName = stored;
 
-  // role refresh (so Admin UI appears immediately)
   await refreshRole_();
-
-  // streams
   await startStreams_();
 
-  // auto-enter app if user already chose name
   if(meName){
     enterApp_();
   } else {
