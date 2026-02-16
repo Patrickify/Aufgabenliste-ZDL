@@ -1,145 +1,154 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#2563eb" />
-  <link rel="manifest" href="/manifest.json" />
-  <title>Aufgaben & Fahrten</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>ULTRA GOD MODE</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">Aufgaben & Fahrten</div>
-    <div class="right">
-      <span id="who" class="who"></span>
-      <button id="logoutBtn" class="btn ghost hidden">Logout</button>
+    <div class="brand">
+      <div class="title">ULTRA GOD MODE</div>
+      <div class="subtitle" id="whoami">—</div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost" id="reloadBtn">Neu laden</button>
+      <button class="btn" id="logoutBtn">Logout</button>
     </div>
   </header>
 
-  <main class="container">
-    <section id="loginView" class="card">
-  <h2>Anmeldung</h2>
-  <p class="muted">Login ohne Email: Benutzername aus Mitarbeiterliste auswählen.</p>
+  <!-- SETUP -->
+  <section class="card" id="setupView" hidden>
+    <h2>Erst-Setup (iPad)</h2>
+    <p class="muted">Firebase Config einfügen (SDK config object). Danach speichern.</p>
+    <textarea id="firebaseCfg" placeholder='{ "apiKey":"...", "authDomain":"...", "projectId":"...", "appId":"..." }'></textarea>
+    <div class="row">
+      <button class="btn" id="saveCfgBtn">Speichern</button>
+      <button class="btn ghost" id="resetCfgBtn">Reset</button>
+    </div>
+    <div class="error" id="setupErr"></div>
+  </section>
 
-  <div class="grid">
-    <label>Benutzername
-      <select id="userSelect" class="select"></select>
-    </label>
-  </div>
+  <!-- LOGIN -->
+  <section class="card" id="loginView" hidden>
+    <h2>Anmeldung</h2>
+    <p class="muted">Ohne E-Mail. Name aus Mitarbeiterliste wählen.</p>
 
-  <div class="row">
-    <button id="userLoginBtn" class="btn">Start</button>
-    <button id="enablePushBtn" class="btn ghost hidden">🔔 Push aktivieren</button>
-  </div>
+    <div class="row">
+      <select id="nameSel"></select>
+      <button class="btn" id="loginBtn">Start</button>
+    </div>
 
-  <details class="cardlite">
-  <summary>Admin (PIN)</summary>
-  <p class="muted small">Admin-Rechte per PIN (setzt serverseitig Custom Claim <code>admin=true</code>).</p>
-  <div class="grid">
-    <label>Admin PIN<input id="adminPin" type="password" inputmode="numeric" /></label>
-  </div>
-  <div class="row">
-    <button id="adminPinBtn" class="btn ghost">Admin freischalten</button>
-  </div>
-  <p class="muted small">
-    Hinweis: PIN wird nur serverseitig geprüft (Cloud Function). Danach neu laden/Token refresh.
-  </p>
-</details>
+    <details class="details">
+      <summary>Admin freischalten (Auto Admin)</summary>
+      <p class="muted">Tippe „UID anzeigen“. Trage diese UID einmalig in Firestore in <b>admins/{UID}</b> ein.</p>
+      <div class="row">
+        <button class="btn ghost" id="showUidBtn">Meine UID anzeigen</button>
+        <button class="btn ghost" id="copyUidBtn" disabled>UID kopieren</button>
+      </div>
+      <div class="mono" id="uidBox"></div>
+    </details>
 
+    <div class="divider"></div>
 
-  <div id="loginErr" class="error"></div>
-  <p class="muted small">
-    iPad Push: erst <b>Zum Home-Bildschirm</b> hinzufügen, dann Push aktivieren.
-  </p>
-</section>
+    <h3>Tags (alle sichtbar)</h3>
+    <input id="tagSearch" placeholder="Suche Tag…" />
+    <div id="tagList" class="list"></div>
+  </section>
 
+  <!-- APP -->
+  <section class="card" id="appView" hidden>
+    <div class="tabs">
+      <button class="tab active" data-tab="tasks">Tag Aufgaben</button>
+      <button class="tab" data-tab="rides">Fahrten</button>
+      <button class="tab" data-tab="admin">Admin</button>
+      <button class="tab" data-tab="god">GOD MODE</button>
+    </div>
 
-    <section id="appView" class="hidden">
-      <section class="card">
-        <div class="row between">
-          <h2>Tags</h2>
-          <input id="tagSearch" class="search" placeholder="Suche Tag_ID" />
+    <!-- TASKS -->
+    <div class="tabpane" id="tab_tasks">
+      <div class="row space">
+        <div>
+          <div class="h2" id="openTagTitle">Kein Tag geöffnet</div>
+          <div class="muted" id="tagMeta"></div>
         </div>
-        <div id="tagsList" class="list"></div>
-      </section>
-
-      <section id="tagDetail" class="card hidden">
-        <div class="row between">
-          <h2 id="tagTitle">Tag</h2>
-          <button id="closeTagBtn" class="btn ghost">Schließen</button>
-        </div>
-
         <div class="row">
-          <input id="employeeName" class="input" placeholder="Mitarbeiter (Anna, Max…)" />
-          <button id="addEmployeeBtn" class="btn ghost">Add</button>
+          <button class="btn ghost" id="closeTagBtn">Tag schließen</button>
+          <button class="btn" id="newTaskBtn">+ Aufgabe</button>
         </div>
-        <div id="employeeChips" class="chips"></div>
+      </div>
+      <div id="taskList" class="list"></div>
+    </div>
 
-        <div class="row between">
-          <button id="markDoneBtn" class="btn">✅ Mark Done</button>
-          <div class="muted">Ausgewählt: <span id="selectedCount">0</span></div>
+    <!-- RIDES -->
+    <div class="tabpane" id="tab_rides" hidden>
+      <h2>Fahrten (heute)</h2>
+      <div class="row">
+        <select id="rideNameSel"></select>
+        <input id="rideEinsatz" placeholder="Einsatznummer" />
+        <button class="btn" id="addRideBtn">Speichern</button>
+      </div>
+      <div class="muted small" id="rideInfo"></div>
+    </div>
+
+    <!-- ADMIN -->
+    <div class="tabpane" id="tab_admin" hidden>
+      <div class="warn" id="adminLock">Nur Admins.</div>
+
+      <div id="adminArea" hidden>
+        <h2>Admin</h2>
+
+        <div class="grid2">
+          <div class="subcard">
+            <h3>Mitarbeiter</h3>
+            <div class="row">
+              <input id="empAdd" placeholder="Name hinzufügen" />
+              <button class="btn" id="empAddBtn">+</button>
+            </div>
+            <div id="empList" class="list"></div>
+          </div>
+
+          <div class="subcard">
+            <h3>Tags</h3>
+            <div class="row">
+              <input id="tagAdd" placeholder="Neue Tag_ID" />
+              <button class="btn" id="tagAddBtn">+</button>
+            </div>
+            <div id="adminTagList" class="list"></div>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- GOD MODE -->
+    <div class="tabpane" id="tab_god" hidden>
+      <div class="warn" id="godLock">Nur Admins.</div>
+
+      <div id="godArea" hidden>
+        <div class="row space">
+          <div>
+            <h2>GOD MODE Dashboard</h2>
+            <div class="muted" id="godSummary">—</div>
+          </div>
+          <div class="row">
+            <button class="btn ghost" id="toggleOnlyOpenBtn">Nur offene Tags</button>
+            <button class="btn ghost" id="collapseAllBtn">Alles zuklappen</button>
+          </div>
+        </div>
+
+        <input id="godSearch" placeholder="Suche Tag oder Aufgabe…" />
+        <div id="godList" class="list"></div>
 
         <div class="divider"></div>
-        <div id="tasksList" class="list"></div>
-      </section>
 
-      <section class="card">
-        <div class="row between">
-          <h2>Fahrten (heute)</h2>
-          <span id="dayKey" class="pill"></span>
-        </div>
-        <div class="grid2">
-          <label>Name<input id="rideName" /></label>
-          <label>Einsatznummer<input id="rideEinsatz" /></label>
-        </div>
-        <div class="row">
-          <button id="addRideBtn" class="btn">Add Fahrt</button>
-        </div>
-        <div id="ridesList" class="list"></div>
-      </section>
+        <button class="btn danger" id="dayChangeBtn">Tageswechsel (Archiv & Leeren)</button>
+        <div class="muted small">Archiviert Tasks & Fahrten in Firestore und leert die Tageslisten.</div>
+      </div>
+    </div>
+  </section>
 
-      <section id="adminCard" class="card hidden">
-  <div class="row between">
-    <h2>Admin</h2>
-    <span class="pill">Nur Admins</span>
-  </div>
-
-  <div class="divider"></div>
-
-  <h3>Mitarbeiter (Login-Namen)</h3>
-  <div class="row">
-    <input id="newEmployeeName" class="input" placeholder="Name hinzufügen (z.B. Anna)" />
-    <button id="addEmployeePublicBtn" class="btn ghost">Hinzufügen</button>
-  </div>
-  <div id="employeesPublicList" class="list"></div>
-
-  <div class="divider"></div>
-
-  <h3>Tags</h3>
-  <div class="row">
-    <input id="newTagId" class="input" placeholder="Neue Tag_ID" />
-    <button id="addTagBtn" class="btn ghost">Tag hinzufügen</button>
-  </div>
-  <div id="adminTagsList" class="list"></div>
-
-  <div class="divider"></div>
-
-  <h3>Punkte bearbeiten</h3>
-  <p class="muted small">Tippe auf einen Mitarbeiter, um Punkte zu ändern.</p>
-</section>
-
-      <section id="pointsCard" class="card hidden">
-        <div class="row between">
-          <h2>Punkte (nur Admin)</h2>
-          <button id="refreshPointsBtn" class="btn ghost">Refresh</button>
-        </div>
-        <div id="pointsList" class="list"></div>
-      </section>
-    </section>
-  </main>
-
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
