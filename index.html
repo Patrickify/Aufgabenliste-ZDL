@@ -12,14 +12,13 @@
   <header class="topbar">
     <div class="brand">ULTRA GOD MODE</div>
     <div class="right">
-      <span id="who" class="who"></span>
-      <button id="logoutBtn" class="btn ghost hidden">Logout</button>
+      <span id="whoami" class="who">—</span>
       <button id="reloadBtn" class="btn ghost">Neu laden</button>
+      <button id="logoutBtn" class="btn ghost">Logout</button>
     </div>
   </header>
 
   <main class="container">
-
     <!-- LOGIN -->
     <section id="loginView" class="card">
       <h2>Anmeldung</h2>
@@ -27,140 +26,133 @@
 
       <div class="grid">
         <label>Benutzername
-          <select id="userSelect" class="select"></select>
+          <select id="nameSel" class="select"></select>
         </label>
       </div>
 
       <div class="row">
-        <button id="userLoginBtn" class="btn">Start</button>
-        <button id="enablePushBtn" class="btn ghost hidden">🔔 Push aktivieren</button>
+        <button id="loginBtn" class="btn">Start</button>
       </div>
 
       <details class="cardlite">
-        <summary>Admin freischalten (ZERO SETUP)</summary>
+        <summary>Admin Bootstrap (Zero Setup)</summary>
         <p class="muted small">
-          Wenn noch kein Admin existiert, kannst du dich als <b>erster Admin</b> direkt in der App freischalten.
-          Danach können Admins weitere Admins in der App hinzufügen.
+          Beim allerersten Start wird automatisch ein Super-Admin gesetzt.
+          Danach kann nur ein Admin weitere Admins in der App hinzufügen.
         </p>
         <div class="row">
-          <button id="claimFirstAdminBtn" class="btn ghost">👑 Erster Admin werden</button>
           <button id="showUidBtn" class="btn ghost">Meine UID anzeigen</button>
+          <button id="copyUidBtn" class="btn ghost" disabled>UID kopieren</button>
         </div>
         <div class="muted small">UID: <span id="uidBox">—</span></div>
       </details>
 
       <div id="loginErr" class="error"></div>
       <p class="muted small">
-        iOS/iPad Push: erst <b>Zum Home-Bildschirm</b> hinzufügen, dann Push aktivieren.
+        Push: Android/Chrome geht direkt. iPad/iPhone nur als installierte PWA („Zum Home-Bildschirm“).
       </p>
-
-      <div class="divider"></div>
-
-      <h3>Tags (alle sichtbar)</h3>
-      <input id="tagSearch" class="search" placeholder="Suche Tag..." />
-      <div id="tagsList" class="list"></div>
     </section>
 
     <!-- APP -->
     <section id="appView" class="hidden">
-
+      <!-- TAGS -->
       <section class="card">
         <div class="row between">
-          <h2>Tags</h2>
-          <input id="tagSearch2" class="search" placeholder="Suche Tag..." />
+          <h2>Tags (alle sichtbar)</h2>
+          <input id="tagSearch" class="search" placeholder="Suche Tag_ID" />
         </div>
-        <div id="tagsList2" class="list"></div>
+        <div id="tagList" class="list"></div>
       </section>
 
-      <section id="tagDetail" class="card hidden">
+      <!-- TAG DETAIL -->
+      <section class="card">
         <div class="row between">
-          <h2 id="tagTitle">Tag</h2>
+          <h2 id="openTagTitle">Kein Tag geöffnet</h2>
           <button id="closeTagBtn" class="btn ghost">Schließen</button>
         </div>
-
-        <div class="row">
-          <input id="employeeName" class="input" placeholder="Erledigt von (Name eingeben + Add)" />
-          <button id="addEmployeeBtn" class="btn ghost">Add</button>
-        </div>
-        <div id="employeeChips" class="chips"></div>
+        <div id="tagMeta" class="muted small"></div>
 
         <div class="row between">
-          <button id="markDoneBtn" class="btn">✅ Mark Done</button>
-          <div class="muted">Ausgewählt: <span id="selectedCount">0</span></div>
+          <button id="newTaskBtn" class="btn ghost">+ Aufgabe</button>
+          <span class="muted small">Tippe ✅ um abzuhaken</span>
         </div>
 
-        <div class="divider"></div>
-        <div class="row between">
-          <button id="newTaskBtn" class="btn ghost hidden">➕ Neue Aufgabe (Admin)</button>
-          <button id="refreshTagBtn" class="btn ghost">Refresh</button>
-        </div>
-        <div id="tasksList" class="list"></div>
+        <div id="taskList" class="list"></div>
       </section>
 
+      <!-- FAHRTEN -->
       <section class="card">
         <div class="row between">
           <h2>Fahrten (heute)</h2>
-          <span id="dayKey" class="pill"></span>
+          <span id="dayKeyBadge" class="pill"></span>
         </div>
         <div class="grid2">
-          <label>Name<input id="rideName" /></label>
-          <label>Einsatznummer<input id="rideEinsatz" /></label>
+          <label>Name
+            <select id="rideNameSel" class="select"></select>
+          </label>
+          <label>Einsatznummer
+            <input id="rideEinsatz" class="input" placeholder="z.B. 12345" />
+          </label>
         </div>
         <div class="row">
           <button id="addRideBtn" class="btn">Add Fahrt</button>
+          <span id="rideInfo" class="muted small"></span>
         </div>
-        <div id="ridesList" class="list"></div>
       </section>
 
-      <section id="adminCard" class="card hidden">
+      <!-- ADMIN -->
+      <section class="card">
         <div class="row between">
           <h2>Admin</h2>
-          <span class="pill">Nur Admins</span>
+          <span id="adminBadge" class="pill hidden">ADMIN</span>
         </div>
 
-        <div class="divider"></div>
+        <div id="adminLock" class="muted">Nur Admins.</div>
 
-        <h3>Mitarbeiter (Login-Namen)</h3>
-        <div class="row">
-          <input id="newEmployeeName" class="input" placeholder="Name hinzufügen (z.B. Anna)" />
-          <button id="addEmployeePublicBtn" class="btn ghost">Hinzufügen</button>
+        <div id="adminArea" class="hidden">
+          <div class="divider"></div>
+
+          <h3>Mitarbeiter (Login-Namen)</h3>
+          <div class="row">
+            <input id="empAdd" class="input" placeholder="Name (z.B. Anna)" />
+            <button id="empAddBtn" class="btn ghost">Hinzufügen</button>
+          </div>
+          <div id="empList" class="list"></div>
+
+          <div class="divider"></div>
+
+          <h3>Tags verwalten</h3>
+          <div class="row">
+            <input id="tagAdd" class="input" placeholder="Neue Tag_ID" />
+            <button id="tagAddBtn" class="btn ghost">Tag hinzufügen</button>
+          </div>
+          <div id="adminTagList" class="list"></div>
+
+          <div class="divider"></div>
+
+          <h3>Ultra Dashboard</h3>
+          <div class="row between">
+            <input id="godSearch" class="search" placeholder="Suche (Tag oder Aufgabe)" />
+            <div class="row">
+              <button id="toggleOnlyOpenBtn" class="btn ghost">Nur offene</button>
+              <button id="collapseAllBtn" class="btn ghost">Alle zuklappen</button>
+              <button id="dayChangeBtn" class="btn danger">Tageswechsel</button>
+            </div>
+          </div>
+          <div id="godSummary" class="muted small"></div>
+          <div id="godList" class="list"></div>
+
+          <div class="divider"></div>
+
+          <h3>Admins verwalten</h3>
+          <p class="muted small">UID eines Geräts eintragen → wird Admin.</p>
+          <div class="row">
+            <input id="adminUidAdd" class="input" placeholder="UID einfügen" />
+            <button id="adminUidAddBtn" class="btn ghost">Admin hinzufügen</button>
+          </div>
+          <div id="adminUidList" class="list"></div>
         </div>
-        <div id="employeesPublicList" class="list"></div>
-
-        <div class="divider"></div>
-
-        <h3>Tags</h3>
-        <div class="row">
-          <input id="newTagId" class="input" placeholder="Neue Tag_ID" />
-          <button id="addTagBtn" class="btn ghost">Tag hinzufügen</button>
-        </div>
-        <div id="adminTagsList" class="list"></div>
-
-        <div class="divider"></div>
-
-        <h3>Admins verwalten</h3>
-        <p class="muted small">Andere Geräte können ihre UID anzeigen, du trägst sie hier ein.</p>
-        <div class="row">
-          <input id="newAdminUid" class="input" placeholder="UID eines Geräts" />
-          <button id="addAdminBtn" class="btn ghost">Admin hinzufügen</button>
-        </div>
-        <div id="adminList" class="list"></div>
-
-        <div class="divider"></div>
-
-        <h3>Tageswechsel</h3>
-        <p class="muted small">Archiviert Tasks + Fahrten von heute und leert Tagesdaten.</p>
-        <button id="dayChangeBtn" class="btn danger">Tageswechsel ausführen</button>
       </section>
-
-      <section id="pointsCard" class="card hidden">
-        <div class="row between">
-          <h2>Punkte (nur Admin)</h2>
-          <button id="refreshPointsBtn" class="btn ghost">Refresh</button>
-        </div>
-        <div id="pointsList" class="list"></div>
-      </section>
-
     </section>
   </main>
 
